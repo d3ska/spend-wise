@@ -1,0 +1,2 @@
+-- PostgreSQL does not support removing values from an enum type.
+-- No action needed for rollback.
