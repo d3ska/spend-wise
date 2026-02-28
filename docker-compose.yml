@@ -1,0 +1,69 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: spendwise-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: spendwise
+    ports:
+      - "5432:5432"
+    volumes:
+      - spendwise-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d spendwise"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: spendwise-api
+    ports:
+      - "8080:8080"
+    environment:
+      SERVER_HOST: "0.0.0.0"
+      SERVER_PORT: "8080"
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: spendwise
+      DB_SSLMODE: disable
+      JWT_SECRET: change-me-in-production
+      AUTH_BYPASS: "${AUTH_BYPASS:-false}"
+      CORS_ALLOWED_ORIGINS: "https://localhost:3000"
+      COOKIE_SECURE: "false"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: spendwise-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@spendwise.dev
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_SERVER_JSON_FILE: /pgadmin4/servers.json
+    ports:
+      - "5050:80"
+    volumes:
+      - ./pgadmin-servers.json:/pgadmin4/servers.json:ro
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: spendwise-frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+
+volumes:
+  spendwise-pgdata:
