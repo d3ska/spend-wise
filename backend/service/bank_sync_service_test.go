@@ -1002,6 +1002,19 @@ func TestBuildFingerprint(t *testing.T) {
 			},
 			same: true,
 		},
+		"same transaction_id with different dates produces same fingerprint": {
+			tx1: banksync.Transaction{
+				TransactionID:     "abc123",
+				BookingDate:       "2025-01-15",
+				TransactionAmount: banksync.Amount{Amount: "100.00", Currency: "PLN"},
+			},
+			tx2: banksync.Transaction{
+				TransactionID:     "abc123",
+				BookingDate:       "2025-01-16",
+				TransactionAmount: banksync.Amount{Amount: "100.00", Currency: "PLN"},
+			},
+			same: true,
+		},
 		"different transaction_id produces different fingerprint": {
 			tx1: banksync.Transaction{
 				TransactionID:     "abc123",
@@ -1027,6 +1040,19 @@ func TestBuildFingerprint(t *testing.T) {
 				RemittanceInformation: []string{"Invoice #001"},
 			},
 			same: true,
+		},
+		"no transaction_id with different dates produces different fingerprint": {
+			tx1: banksync.Transaction{
+				BookingDate:           "2025-01-15",
+				TransactionAmount:     banksync.Amount{Amount: "50.00", Currency: "PLN"},
+				RemittanceInformation: []string{"Invoice #001"},
+			},
+			tx2: banksync.Transaction{
+				BookingDate:           "2025-01-16",
+				TransactionAmount:     banksync.Amount{Amount: "50.00", Currency: "PLN"},
+				RemittanceInformation: []string{"Invoice #001"},
+			},
+			same: false,
 		},
 		"different remittance info produces different fingerprint": {
 			tx1: banksync.Transaction{

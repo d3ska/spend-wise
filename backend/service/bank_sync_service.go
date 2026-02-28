@@ -267,14 +267,16 @@ func ibanFromAccount(acct *banksync.AccountIdentification) string {
 }
 
 // buildFingerprint creates a composite fingerprint for dedup.
-// When transaction_id is present: sha256(transaction_id|booking_date|amount|currency)
+// When transaction_id is present: sha256(transaction_id|amount|currency)
+//
+//	— booking_date is excluded because banks may shift dates between syncs.
+//
 // When absent: sha256(booking_date|amount|currency|first_remittance_info)
 func buildFingerprint(tx banksync.Transaction) string {
 	var input string
 	if tx.TransactionID != "" {
-		input = fmt.Sprintf("%s|%s|%s|%s",
+		input = fmt.Sprintf("%s|%s|%s",
 			tx.TransactionID,
-			tx.BookingDate,
 			tx.TransactionAmount.Amount,
 			tx.TransactionAmount.Currency,
 		)
