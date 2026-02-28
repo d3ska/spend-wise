@@ -1,0 +1,9 @@
+{
+  "required": "This field is required",
+  "too_small": "Value is too short",
+  "too_big": "Value is too long",
+  "invalid_type": "Invalid value",
+  "invalid_string": "Invalid format",
+  "invalid_enum_value": "Invalid selection",
+  "custom": "Invalid value"
+}

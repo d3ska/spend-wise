@@ -1,0 +1,9 @@
+{
+  "required": "To pole jest wymagane",
+  "too_small": "Wartość jest za krótka",
+  "too_big": "Wartość jest za długa",
+  "invalid_type": "Nieprawidłowa wartość",
+  "invalid_string": "Nieprawidłowy format",
+  "invalid_enum_value": "Nieprawidłowy wybór",
+  "custom": "Nieprawidłowa wartość"
+}
