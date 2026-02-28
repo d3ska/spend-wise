@@ -23,17 +23,6 @@ func main() {
 	}
 }
 
-type duplicate struct {
-	KeepID      int64
-	DeleteID    int64
-	WorkspaceID int64
-	Description string
-	Amount      string
-	Currency    string
-	KeepDate    string
-	DeleteDate  string
-}
-
 func run(apply bool) error {
 	_ = godotenv.Load()
 
@@ -49,9 +38,69 @@ func run(apply bool) error {
 	}
 	defer pool.Close()
 
-	// Find duplicate bank transactions:
-	// Same workspace, bank account, amount, currency, case-insensitive description,
-	// dates within 2 days. Keep the one with the smaller ID (first imported).
+	finder := &pgDedupFinder{db: pool}
+	return dedup(ctx, finder, apply)
+}
+
+type duplicate struct {
+	KeepID      int64
+	DeleteID    int64
+	WorkspaceID int64
+	Description string
+	Amount      string
+	Currency    string
+	KeepDate    string
+	DeleteDate  string
+}
+
+// dedupFinder abstracts the DB operations for finding and deleting duplicates.
+type dedupFinder interface {
+	FindDuplicates(ctx context.Context) ([]duplicate, error)
+	DeleteByIDs(ctx context.Context, ids []int64) (int64, error)
+}
+
+func dedup(ctx context.Context, finder dedupFinder, apply bool) error {
+	duplicates, err := finder.FindDuplicates(ctx)
+	if err != nil {
+		return fmt.Errorf("querying duplicates: %w", err)
+	}
+
+	if len(duplicates) == 0 {
+		fmt.Println("No duplicate bank transactions found.")
+		return nil
+	}
+
+	fmt.Printf("Found %d duplicate(s):\n\n", len(duplicates))
+	for _, d := range duplicates {
+		fmt.Printf("  KEEP   #%-6d  %s  %s %s  %q\n", d.KeepID, d.KeepDate, d.Amount, d.Currency, d.Description)
+		fmt.Printf("  DELETE #%-6d  %s  %s %s  %q\n\n", d.DeleteID, d.DeleteDate, d.Amount, d.Currency, d.Description)
+	}
+
+	if !apply {
+		fmt.Println("Dry run — no changes made. Re-run with --apply to delete duplicates.")
+		return nil
+	}
+
+	deleteIDs := make([]int64, len(duplicates))
+	for i, d := range duplicates {
+		deleteIDs[i] = d.DeleteID
+	}
+
+	deleted, err := finder.DeleteByIDs(ctx, deleteIDs)
+	if err != nil {
+		return fmt.Errorf("deleting duplicates: %w", err)
+	}
+
+	fmt.Printf("Deleted %d duplicate transaction(s).\n", deleted)
+	return nil
+}
+
+// pgDedupFinder implements dedupFinder using a PostgreSQL connection.
+type pgDedupFinder struct {
+	db store.DBTX
+}
+
+func (f *pgDedupFinder) FindDuplicates(ctx context.Context) ([]duplicate, error) {
 	query := `
 		SELECT
 			t1.id        AS keep_id,
@@ -78,9 +127,9 @@ func run(apply bool) error {
 		ORDER BY t1.workspace_id, t1.id
 	`
 
-	rows, err := pool.Query(ctx, query)
+	rows, err := f.db.Query(ctx, query)
 	if err != nil {
-		return fmt.Errorf("querying duplicates: %w", err)
+		return nil, err
 	}
 	defer rows.Close()
 
@@ -88,44 +137,21 @@ func run(apply bool) error {
 	for rows.Next() {
 		var d duplicate
 		if err := rows.Scan(&d.KeepID, &d.DeleteID, &d.WorkspaceID, &d.Description, &d.Amount, &d.Currency, &d.KeepDate, &d.DeleteDate); err != nil {
-			return fmt.Errorf("scanning row: %w", err)
+			return nil, fmt.Errorf("scanning row: %w", err)
 		}
 		duplicates = append(duplicates, d)
 	}
 	if err := rows.Err(); err != nil {
-		return fmt.Errorf("iterating rows: %w", err)
+		return nil, err
 	}
 
-	if len(duplicates) == 0 {
-		fmt.Println("No duplicate bank transactions found.")
-		return nil
-	}
+	return duplicates, nil
+}
 
-	fmt.Printf("Found %d duplicate(s):\n\n", len(duplicates))
-	for _, d := range duplicates {
-		fmt.Printf("  KEEP   #%-6d  %s  %s %s  %q\n", d.KeepID, d.KeepDate, d.Amount, d.Currency, d.Description)
-		fmt.Printf("  DELETE #%-6d  %s  %s %s  %q\n\n", d.DeleteID, d.DeleteDate, d.Amount, d.Currency, d.Description)
-	}
-
-	if !apply {
-		fmt.Println("Dry run — no changes made. Re-run with --apply to delete duplicates.")
-		return nil
-	}
-
-	// Delete duplicates (entries cascade-delete automatically).
-	deleteIDs := make([]int64, len(duplicates))
-	for i, d := range duplicates {
-		deleteIDs[i] = d.DeleteID
-	}
-
-	tag, err := pool.Exec(ctx,
-		`DELETE FROM transactions WHERE id = ANY($1)`,
-		deleteIDs,
-	)
+func (f *pgDedupFinder) DeleteByIDs(ctx context.Context, ids []int64) (int64, error) {
+	tag, err := f.db.Exec(ctx, `DELETE FROM transactions WHERE id = ANY($1)`, ids)
 	if err != nil {
-		return fmt.Errorf("deleting duplicates: %w", err)
+		return 0, err
 	}
-
-	fmt.Printf("Deleted %d duplicate transaction(s).\n", tag.RowsAffected())
-	return nil
+	return tag.RowsAffected(), nil
 }
